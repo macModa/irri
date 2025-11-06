@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:latest
+    container_name: smart_irrigation_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - smart_irrigation_network
+
+  # EMQX MQTT Broker
+  emqx:
+    image: emqx/emqx:latest
+    container_name: smart_irrigation_emqx
+    restart: unless-stopped
+    ports:
+      - "1883:1883"      # MQTT
+      - "8083:8083"      # WebSocket
+      - "8883:8883"      # MQTT SSL
+      - "8084:8084"      # WebSocket SSL
+      - "18083:18083"    # Dashboard
+    environment:
+      - EMQX_NAME=emqx
+      - EMQX_HOST=node1.emqx.local
+    networks:
+      - smart_irrigation_network
+
+  # Django Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smart_irrigation_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=django-insecure-change-this-in-production
+      - DEBUG=True
+      - ALLOWED_HOSTS=localhost,127.0.0.1,backend
+      - MONGO_DB_NAME=smart_irrigation
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MQTT_BROKER_HOST=emqx
+      - MQTT_BROKER_PORT=1883
+      - MQTT_TOPIC=farmboy/sensors/#
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+      - USE_AI_MODEL=False
+    depends_on:
+      - mongodb
+      - emqx
+    volumes:
+      - ./smart_irrigation/backend:/app
+    networks:
+      - smart_irrigation_network
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+
+networks:
+  smart_irrigation_network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
